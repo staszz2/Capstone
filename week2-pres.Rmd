@@ -1,0 +1,170 @@
+---
+title: "Capstone-W2-ExploreData"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(caret)
+library(tm)
+library(RWeka)
+library(ggplot2)
+```
+
+## Load files
+
+The english text datasets were acquired from Twitter, News and Blogs. I've loaded the files and performed the basic analysis below.
+
+```{r, echo=FALSE, warning=FALSE}
+dstwitter <- c("C:\\temp\\en_US.twitter.txt","Twitter")
+dsnews    <- c("C:\\temp\\en_US.news.txt", "News")
+dsblogs   <- c("C:\\temp\\en_US.blogs.txt","Blogs")
+all <- rbind(dstwitter,dsnews,dsblogs)
+filestats <- data.frame(all)
+names(filestats) <- c("path","name")
+
+for(dsname in row.names(filestats))
+{
+  cat("Reading dataset ", dsname, " from ", as.character(filestats[dsname,1]), "\n", sep=" ")
+  con <- file(as.character(filestats[dsname,1]), "r", blocking = FALSE)
+  assign(dsname, readLines(con))
+  close(con)
+  cat("---" , as.character(filestats[dsname,2]), " dataset stats---", "\n", sep=" ")
+  
+
+  filestats[dsname,3] <- length(get(dsname))
+  names(filestats)[3] <- "lines"
+  cat("Lines loaded: " , filestats[dsname,3], "\n", sep=" ")
+  
+  filestats[dsname,4] <- max(sapply(get(dsname),nchar))
+  names(filestats)[4] <- "max"
+  cat("Maximum line length", filestats[dsname,4], "\n", sep=" ")
+  
+  filestats[dsname,5] <- mean(sapply(get(dsname),nchar))
+  names(filestats)[5] <- "mean"
+  cat("Average line length", filestats[dsname,5], "\n", sep=" ")
+  
+
+  filestats[dsname,6] <- median(sapply(get(dsname),nchar))
+  names(filestats)[6] <- "median"
+  cat("Median line length", filestats[dsname,6], "\n", sep=" ")
+  
+  filestats[dsname,7] <- sum(sapply(gregexpr("\\W+", get(dsname)), length) + 1)
+  names(filestats)[7] <- "words"
+  cat("Number of words", filestats[dsname,7], "\n", sep=" ")
+  
+  print(object.size(get(dsname)), units='auto')
+  
+  cat("\n\n")
+}
+```
+
+## Summaries
+
+This has been collected into a metric table
+```{r, echo=FALSE}
+filestats[,2:7]
+```
+
+## Graphs
+```{r, echo=FALSE, warning=FALSE}
+temp <- melt(filestats, id.vars="name")
+ggplot(temp[4:18,], aes(x=name,y = value)) +geom_bar(stat = "identity",position="dodge") + facet_wrap(~variable)
+```
+
+## Interesting findings
+
+* 1. Although twitter has the most lines, Blogs has more words.
+* 2. Maybe twitter is more of a spoken language useful in predicting text message words because it consists of shorter sentenses
+* 3. The following are the most common phrases in my first 10000 lines. I removed punctuation and stop words, but maybe I should not because it garables the results compared to real input.
+
+Here's my tm() exploration of the few chunks of twitter dataset. For my dynamic "somegrams" I used maximum and minimum 2-grams
+
+```{r, echo=FALSE, warning=FALSE}
+
+#inTrain <- createDataPartition(y=dstwitter, p=0.9, list=FALSE)
+#training <- dstwitter[inTrain, ] 
+#testing <- dstwitter[-inTrain, ]
+
+settings <- list()
+settings["sourceName"] <- "dstwitter"
+settings["startLine"] <- 1
+settings["endLine"] <- 10000
+settings["lineNumChunk"] <- 5000
+settings["redoCurpus"] <- TRUE
+settings["minGram"] <- 2
+settings["maxGram"] <- 2
+
+
+
+if(settings[["redoCurpus"]])
+{
+  print("Reloading corpus")
+  objName <- settings[["sourceName"]]
+  steps <- round(settings[["endLine"]]/settings[["lineNumChunk"]], digits=0)
+  
+  temp.df <- data.frame(phrase=character(), count=integer())
+  
+  for (i in 1:steps)
+  {
+    startLine <- settings[["startLine"]] + settings[["lineNumChunk"]]*(i-1)
+    finishLine <- startLine + settings[["lineNumChunk"]]
+    dataChunk <- get(objName)[startLine:finishLine]
+    
+    print(paste("Performing step ", i ," of ", steps, " start line = ",startLine))
+    print("Loaded chunk file size")
+    print(object.size(get("dataChunk")), units='auto')
+
+    myCorpus <- VCorpus(VectorSource(dataChunk))
+    myCorpus <- tm_map(myCorpus, tolower)
+    myCorpus <- tm_map(myCorpus, stripWhitespace)
+    myCorpus <- tm_map(myCorpus, removePunctuation)
+    myCorpus <- tm_map(myCorpus, removeNumbers)
+    myCorpus <- tm_map(myCorpus, removeWords, stopwords("english"))
+    #myCorpus <- tm_map(myCorpus, stemDocument) 
+    Corpus   <- tm_map(myCorpus, PlainTextDocument)
+  
+    #inspect(myCorpus[1:2])
+    #writeLines(as.character(myCorpus[[2]]))
+
+    minLim <- settings[["minGram"]]
+    maxLim <- settings[["maxGram"]]
+    SomegramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = minLim, max = maxLim))
+    tdm.somegram = TermDocumentMatrix(Corpus, control = list(tokenize = SomegramTokenizer))
+
+    freq <- rowSums(as.matrix(tdm.somegram))
+    tdm.somegram.clean = removeSparseTerms(tdm.somegram, 0.999)
+    dim(tdm.somegram.clean)
+    freq.clean <- rowSums(as.matrix(tdm.somegram.clean))
+
+    ordered <- order(freq.clean)
+    
+    #get only top xx from that data chunk
+    topFreq <- freq.clean[tail(ordered,100)]
+    freq.df <- data.frame(phrase = names(topFreq ), count = as.vector(topFreq ))
+    temp.df <- rbind(temp.df,freq.df)
+  } #end of loop
+} #end of if
+
+result.df <- aggregate(count ~ phrase, temp.df, sum)
+graph <- head(result.df[order(-result.df$count),],30)
+
+if(nrow(freq.df) == 0)
+{
+  stop("No results for given settings")
+}
+
+g <- ggplot(graph, aes(reorder(phrase,count), count)) +
+  geom_bar(stat = "identity") + coord_flip() +
+  xlab("Somegrams") + ylab("Frequency") +
+  ggtitle("Most frequent somegrams")
+print(g)
+```
+
+## Plans for application
+* 1. I will create lists of 2,3,4 n-grams across all datasets. They will serve as markov chain predictors (if i got that right)
+* 2. I will build shiny application with one input box where user types in text
+* 3. On user input I grab 4-3-2 last words and display most likely next word occurences. 

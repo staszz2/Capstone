@@ -1,0 +1,10 @@
+name: Data_Science_Capstone
+account: staszz2
+server: shinyapps.io
+appId: 167392
+bundleId: 764628
+url: https://staszz2.shinyapps.io/Data_Science_Capstone/
+when: 1490585204.51718
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: comments.MYD|comments.txt|comments_clean.txt|news_text.txt|news_text2.txt|presentation-rpubs.html|presentation.md|presentation.Rpres|Quiz1.R|read-rtcw.R|week2-pres.html|week2-pres.R|week2-pres.Rmd|week2-proj.R|presentation-figure/unnamed-chunk-1-1.png|presentation-figure/unnamed-chunk-2-1.png
